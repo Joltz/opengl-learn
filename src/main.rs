@@ -1,3 +1,5 @@
+use c_str_macro::{self, c_str};
+use cgmath::{vec3, Deg, Matrix, Matrix4};
 use gl33::global_loader::*;
 use gl33::global_loader::{glClear, load_global_gl};
 use gl33::*;
@@ -10,17 +12,21 @@ use std::ffi::c_void;
 use std::mem::size_of;
 use std::mem::size_of_val;
 
+const SCR_WIDTH: u32 = 800;
+const SCR_HEIGHT: u32 = 600;
+
 // Broken Enums
 const _GL_NEAREST: i32 = 0x2600;
 const _GL_LINEAR: i32 = 0x2601;
 const _GL_NEAREST_MIPMAP_LINEAR: i32 = 0x2702;
 const _GL_RGB: i32 = 0x1907;
+const _GL_FALSE: u8 = 0;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new();
     let window_builder = WindowBuilder::new()
         .with_title("Lyra-OpenGL3.3")
-        .with_inner_size(glutin::dpi::LogicalSize::new(512.0, 512.0))
+        .with_inner_size(glutin::dpi::LogicalSize::new(SCR_WIDTH, SCR_HEIGHT))
         .with_position(Position::Logical(LogicalPosition::new(1600.0, 200.0)));
     let context = glutin::ContextBuilder::new()
         .with_gl(glutin::GlRequest::Specific(Api::OpenGl, (3, 3)))
@@ -164,7 +170,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, _GL_NEAREST_MIPMAP_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, _GL_LINEAR);
     }
-    let my_tex = image::open("./resources/alfie2.jpg").expect("Failed to load texture").flipv();
+
+    // Texture
+    let my_tex = image::open("./resources/alfie.jpg")
+        .expect("Failed to load texture")
+        .flipv();
     let my_tex_data = my_tex.to_rgb8();
 
     let mut texture: u32 = 0;
@@ -183,6 +193,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (&my_tex_data as &[u8]).as_ptr() as *const c_void,
         );
         glGenerateMipmap(GL_TEXTURE_2D);
+    }
+
+    // View Projection
+    let model = Matrix4::from_angle_x(Deg(-55.0));
+    let view = Matrix4::from_translation(vec3(0.0f32, 0.0, -3.0));
+    let projection = cgmath::perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 100.0);
+
+    let model_loc = unsafe { glGetUniformLocation(shader_program, c_str!("model").as_ptr() as *const u8) };
+    let view_loc = unsafe { glGetUniformLocation(shader_program, c_str!("view").as_ptr() as *const u8) };
+    let projection_loc = unsafe { glGetUniformLocation(shader_program, c_str!("projection").as_ptr() as *const u8) };
+
+    unsafe {
+        glUniformMatrix4fv(model_loc, 1, _GL_FALSE, model.as_ptr());
+        glUniformMatrix4fv(view_loc, 1, _GL_FALSE, view.as_ptr());
+        glUniformMatrix4fv(projection_loc, 1, _GL_FALSE, projection.as_ptr());
     }
 
     event_loop.run(move |event, _, controlflow| match event {
