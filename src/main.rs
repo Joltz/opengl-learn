@@ -1,17 +1,18 @@
-use c_str_macro::{self, c_str};
-use cgmath::{vec3, Deg, Matrix, Matrix4};
-use gl33::global_loader::*;
-use gl33::global_loader::{glClear, load_global_gl};
-use gl33::*;
-use glutin::dpi::{LogicalPosition, Position};
-use glutin::event::{Event, WindowEvent};
-use glutin::event_loop::EventLoop;
-use glutin::window::WindowBuilder;
-use glutin::Api;
-use std::ffi::c_void;
-use std::mem::size_of;
-use std::mem::size_of_val;
+mod c_macros;
 
+use cgmath::{vec3, Deg, InnerSpace, Matrix, Matrix4, Point3};
+use gl33::{global_loader::*, *};
+use glutin::{
+    dpi::{LogicalPosition, Position},
+    event::{Event, WindowEvent, KeyboardInput},
+    event_loop::EventLoop,
+    window::WindowBuilder,
+    Api,
+};
+use std::ffi::c_void;
+use std::mem::{size_of, size_of_val};
+
+// Screen Settings
 const SCR_WIDTH: u32 = 800;
 const SCR_HEIGHT: u32 = 600;
 
@@ -23,6 +24,7 @@ const _GL_RGB: i32 = 0x1907;
 const _GL_FALSE: u8 = 0;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Build Window, Context, Event Loop
     let event_loop = EventLoop::new();
     let window_builder = WindowBuilder::new()
         .with_title("Lyra-OpenGL3.3")
@@ -34,10 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_windowed(window_builder, &event_loop)
         .unwrap();
     let context = unsafe { context.make_current().unwrap() };
-    println!(
-        "Pixel fomrat of the window's GL context: {:?}",
-        context.get_pixel_format()
-    );
+    println!("Pixel fomrat of the window's GL context: {:?}", context.get_pixel_format());
 
     // Load in all our OpenGL Functions
     unsafe {
@@ -93,22 +92,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Vertice input
     let vertices = [
-        0.5f32, 0.5, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, // top right
-        0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, // bottom right
-        -0.5, -0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, // bottom left
-        -0.5, 0.5, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0,
-    ]; // top left
-    let indices = [0, 1, 3, 1, 2, 3];
+        -0.5f32, -0.5, -0.5, 0.0, 0.0, 0.5, -0.5, -0.5, 1.0, 0.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, 0.5, -0.5, 1.0, 1.0, -0.5, 0.5, -0.5, 0.0, 1.0, -0.5, -0.5,
+        -0.5, 0.0, 0.0, -0.5, -0.5, 0.5, 0.0, 0.0, 0.5, -0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, -0.5, 0.5, 0.5, 0.0, 1.0, -0.5,
+        -0.5, 0.5, 0.0, 0.0, -0.5, 0.5, 0.5, 1.0, 0.0, -0.5, 0.5, -0.5, 1.0, 1.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, -0.5, 0.5, 0.0,
+        0.0, -0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, 0.5,
+        0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0, -0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, -0.5, 1.0, 1.0, 0.5, -0.5, 0.5, 1.0, 0.0, 0.5, -0.5, 0.5, 1.0, 0.0, -0.5,
+        -0.5, 0.5, 0.0, 0.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, 0.5, -0.5, 0.0, 1.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0,
+        -0.5, 0.5, 0.5, 0.0, 0.0, -0.5, 0.5, -0.5, 0.0, 1.0,
+    ];
 
     // Create and initialize Buffer/Array objects
     // Vertex Buffer Objects (VBO) are where we manage batches of input data being sent to the GPU
-    let mut vao = 0;
-    let mut ebo = 0;
-    let mut vbo = 0;
+    let (mut vbo, mut vao) = (0, 0);
     unsafe {
         glGenVertexArrays(1, &mut vao);
         glGenBuffers(1, &mut vbo);
-        glGenBuffers(1, &mut ebo);
 
         // Bind VAO first, then bind and set vertex buffers, then configure vertex attribs
         // Binds assign our buffers a certain buffer type
@@ -123,46 +121,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             GL_STATIC_DRAW, // This hints our GPU how the data will be used
         );
 
-        // Element Buffer Objects let use define shared indices for more efficient drawing instead of drawing each triangle with unique, individual vertices
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-        glBufferData(
-            GL_ELEMENT_ARRAY_BUFFER,
-            size_of_val(&indices).try_into()?,
-            indices.as_ptr().cast(),
-            GL_STATIC_DRAW,
-        );
-
         // Tells OpenGL how to interpret our vertex attributes
-        // Position attribure
+        // Position attribute
         glVertexAttribPointer(
             0,                                  // Index of the attribute we want to change (layout = _)
-            3,        // Number of elements in the data we're sending. We're sending a vec3 so it has 3 elements.
-            GL_FLOAT, // We're sending floats
-            0,        // Boolean value if we want the data to be normalized or not
-            (size_of::<f32>() * 8).try_into()?, // Stride is how large our chunk of data is. We're sending 3 * f32.
-            0 as *const c_void, // Offset is void* since the position of our data is at the start of the array
+            3,                                  // Number of elements in the data we're sending. We're sending a vec3 so it has 3 elements.
+            GL_FLOAT,                           // We're sending floats
+            0,                                  // Boolean value if we want the data to be normalized or not
+            (size_of::<f32>() * 5).try_into()?, // Stride is how large our chunk of data is. We're sending 3 * f32.
+            0 as *const c_void,                 // Offset is void* since the position of our data is at the start of the array
         );
         glEnableVertexAttribArray(0);
 
-        glVertexAttribPointer(
-            1,
-            3,
-            GL_FLOAT,
-            0,
-            (size_of::<f32>() * 8).try_into()?,
-            (3 * size_of::<f32>()) as *const c_void,
-        );
+        // TexCoords
+        glVertexAttribPointer(1, 2, GL_FLOAT, 0, (size_of::<f32>() * 5).try_into()?, (3 * size_of::<f32>()) as *const c_void);
         glEnableVertexAttribArray(1);
-
-        glVertexAttribPointer(
-            2,
-            2,
-            GL_FLOAT,
-            0,
-            (size_of::<f32>() * 8).try_into()?,
-            (6 * size_of::<f32>()) as *const c_void,
-        );
-        glEnableVertexAttribArray(2);
 
         // Unbind VBO
         glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -172,9 +145,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Texture
-    let my_tex = image::open("./resources/alfie.jpg")
-        .expect("Failed to load texture")
-        .flipv();
+    let my_tex = image::open("./resources/alfie.jpg").expect("Failed to load texture").flipv();
     let my_tex_data = my_tex.to_rgb8();
 
     let mut texture: u32 = 0;
@@ -195,22 +166,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         glGenerateMipmap(GL_TEXTURE_2D);
     }
 
-    // View Projection
-    let model = Matrix4::from_angle_x(Deg(-55.0));
-    let view = Matrix4::from_translation(vec3(0.0f32, 0.0, -3.0));
-    let projection = cgmath::perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 100.0);
+    let start_time = std::time::Instant::now();
 
-    let model_loc = unsafe { glGetUniformLocation(shader_program, c_str!("model").as_ptr() as *const u8) };
-    let view_loc = unsafe { glGetUniformLocation(shader_program, c_str!("view").as_ptr() as *const u8) };
-    let projection_loc = unsafe { glGetUniformLocation(shader_program, c_str!("projection").as_ptr() as *const u8) };
+    let mesh_positions = [
+        vec3(0.0f32, 0.0, 0.0),
+        vec3(2.0, 5.0, -15.0),
+        vec3(-1.5, -2.2, -2.5),
+        vec3(-3.8, -2.0, -12.3),
+        vec3(2.4, -0.4, -3.5),
+        vec3(-1.7, 3.0, -7.5),
+        vec3(1.3, -2.0, -2.5),
+        vec3(1.5, 2.0, -2.5),
+        vec3(1.5, 0.2, -1.5),
+        vec3(-1.3, 1.0, -1.5),
+    ];
 
-    unsafe {
-        glUniformMatrix4fv(model_loc, 1, _GL_FALSE, model.as_ptr());
-        glUniformMatrix4fv(view_loc, 1, _GL_FALSE, view.as_ptr());
-        glUniformMatrix4fv(projection_loc, 1, _GL_FALSE, projection.as_ptr());
-    }
+    // Camera / Projection
+    let up = vec3(0.0f32, 1.0, 0.0);
+    let mut camera_pos = Point3 { x: 0.0f32, y: 0.0, z: 5.0 };
+    let camera_target = Point3 { x: 0.0f32, y: 0.0, z: 0.0 };
+    let camera_direction = camera_pos - camera_target;
+    let camera_front = vec3(0.0f32, 0.0, -1.0);
+    let camera_right = (up.cross(camera_direction)).normalize();
+    let camera_up = camera_direction.cross(camera_right);
 
     event_loop.run(move |event, _, controlflow| match event {
+
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
             ..
@@ -220,14 +201,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Event::MainEventsCleared => {
             unsafe {
                 glClearColor(0.1, 0.1, 0.2, 1.0);
-                glClear(GL_COLOR_BUFFER_BIT);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+                let time = std::time::Instant::elapsed(&start_time).as_secs_f32();
+
+                // let view = Matrix4::look_at_rh(camera_pos, camera_target, camera_up);
+                let view = Matrix4::look_at_rh(camera_pos, camera_pos + camera_front, camera_up);
+
+                let projection = cgmath::perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 100.0);
+                // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
+
+                let model_loc = glGetUniformLocation(shader_program, c_str_ptr!("model"));
+                let view_loc = glGetUniformLocation(shader_program, c_str_ptr!("view"));
+                let projection_loc = glGetUniformLocation(shader_program, c_str_ptr!("projection"));
+
+                glUniformMatrix4fv(view_loc, 1, _GL_FALSE, view.as_ptr());
+                glUniformMatrix4fv(projection_loc, 1, _GL_FALSE, projection.as_ptr());
+
+                glEnable(GL_DEPTH_TEST);
+                gl_check_error();
+
+                for (i, position) in mesh_positions.iter().enumerate() {
+                    let mut model = Matrix4::from_translation(*position) * Matrix4::from_axis_angle(vec3(0.5, 1.0, 0.0).normalize(), cgmath::Rad(time));
+                    let angle = 20.0 * i as f32;
+                    model = model * Matrix4::from_axis_angle(vec3(1.0, 0.3, 0.5).normalize(), Deg(angle));
+                    glUniformMatrix4fv(model_loc, 1, _GL_FALSE, model.as_ptr());
+                    glDrawArrays(GL_TRIANGLES, 0, 36);
+                }
             }
             context.window().request_redraw();
         }
-        Event::RedrawRequested(_) => unsafe {
-            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0 as *const _);
+        Event::RedrawRequested(_) => {
             context.swap_buffers().unwrap();
-        },
+        }
         _ => {
             // catch-all
         }
@@ -249,4 +255,9 @@ unsafe fn check_shader_errors(input: u32, status_enum: GLenum) {
         v.set_len(log_len.try_into().unwrap());
         panic!("Shader Compile Error: {}", String::from_utf8_lossy(&v));
     }
+}
+
+unsafe fn gl_check_error() {
+    let error = glGetError();
+    debug_assert!(error == GLenum(0x0), "OpenGL Error: {}", error.0)
 }
