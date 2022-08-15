@@ -1,10 +1,12 @@
 mod c_macros;
+mod camera;
+mod keyboard;
 
-use cgmath::{vec3, Deg, InnerSpace, Matrix, Matrix4, Point3};
+use cgmath::{vec3, Deg, InnerSpace, Matrix, Matrix4, Point3, Vector3};
 use gl33::{global_loader::*, *};
 use glutin::{
     dpi::{LogicalPosition, Position},
-    event::{Event, WindowEvent, KeyboardInput},
+    event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::EventLoop,
     window::WindowBuilder,
     Api,
@@ -13,8 +15,8 @@ use std::ffi::c_void;
 use std::mem::{size_of, size_of_val};
 
 // Screen Settings
-const SCR_WIDTH: u32 = 800;
-const SCR_HEIGHT: u32 = 600;
+const SCR_WIDTH: u32 = 1200;
+const SCR_HEIGHT: u32 = 800;
 
 // Broken Enums
 const _GL_NEAREST: i32 = 0x2600;
@@ -24,6 +26,13 @@ const _GL_RGB: i32 = 0x1907;
 const _GL_FALSE: u8 = 0;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Input State
+    let mut keyboard_state = keyboard::KeyboardState::new();
+
+    // Delta Time
+    let mut deltatime: f32 = 0.0;
+    let mut last_frame_time: f32 = 0.0;
+
     // Build Window, Context, Event Loop
     let event_loop = EventLoop::new();
     let window_builder = WindowBuilder::new()
@@ -36,6 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_windowed(window_builder, &event_loop)
         .unwrap();
     let context = unsafe { context.make_current().unwrap() };
+    context.window().set_cursor_grab(glutin::window::CursorGrabMode::Confined)?;
+    context.window().set_cursor_visible(false);
     println!("Pixel fomrat of the window's GL context: {:?}", context.get_pixel_format());
 
     // Load in all our OpenGL Functions
@@ -92,13 +103,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Vertice input
     let vertices = [
-        -0.5f32, -0.5, -0.5, 0.0, 0.0, 0.5, -0.5, -0.5, 1.0, 0.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, 0.5, -0.5, 1.0, 1.0, -0.5, 0.5, -0.5, 0.0, 1.0, -0.5, -0.5,
-        -0.5, 0.0, 0.0, -0.5, -0.5, 0.5, 0.0, 0.0, 0.5, -0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, -0.5, 0.5, 0.5, 0.0, 1.0, -0.5,
-        -0.5, 0.5, 0.0, 0.0, -0.5, 0.5, 0.5, 1.0, 0.0, -0.5, 0.5, -0.5, 1.0, 1.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, -0.5, 0.5, 0.0,
-        0.0, -0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, 0.5,
-        0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0, -0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, -0.5, 1.0, 1.0, 0.5, -0.5, 0.5, 1.0, 0.0, 0.5, -0.5, 0.5, 1.0, 0.0, -0.5,
-        -0.5, 0.5, 0.0, 0.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, 0.5, -0.5, 0.0, 1.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0,
-        -0.5, 0.5, 0.5, 0.0, 0.0, -0.5, 0.5, -0.5, 0.0, 1.0,
+        -0.5f32, -0.5, -0.5, 0.0, 0.0, 0.5, -0.5, -0.5, 1.0, 0.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, 0.5, -0.5, 1.0, 1.0, -0.5, 0.5, -0.5, 0.0, 1.0, -0.5, -0.5, -0.5, 0.0,
+        0.0, -0.5, -0.5, 0.5, 0.0, 0.0, 0.5, -0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, -0.5, 0.5, 0.5, 0.0, 1.0, -0.5, -0.5, 0.5, 0.0, 0.0,
+        -0.5, 0.5, 0.5, 1.0, 0.0, -0.5, 0.5, -0.5, 1.0, 1.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5, -0.5, 0.5, 0.0, 0.0, -0.5, 0.5, 0.5, 1.0, 0.0,
+        0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, 0.5, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0, -0.5,
+        -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, -0.5, 1.0, 1.0, 0.5, -0.5, 0.5, 1.0, 0.0, 0.5, -0.5, 0.5, 1.0, 0.0, -0.5, -0.5, 0.5, 0.0, 0.0, -0.5, -0.5, -0.5, 0.0, 1.0, -0.5,
+        0.5, -0.5, 0.0, 1.0, 0.5, 0.5, -0.5, 1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 0.5, 1.0, 0.0, -0.5, 0.5, 0.5, 0.0, 0.0, -0.5, 0.5, -0.5, 0.0, 1.0,
+    ];
+
+    let mesh_positions = [
+        vec3(0.0f32, 0.0, 0.0),
+        vec3(2.0, 5.0, -15.0),
+        vec3(-1.5, -2.2, -2.5),
+        vec3(-3.8, -2.0, -12.3),
+        vec3(2.4, -0.4, -3.5),
+        vec3(-1.7, 3.0, -7.5),
+        vec3(1.3, -2.0, -2.5),
+        vec3(1.5, 2.0, -2.5),
+        vec3(1.5, 0.2, -1.5),
+        vec3(-1.3, 1.0, -1.5),
     ];
 
     // Create and initialize Buffer/Array objects
@@ -168,45 +191,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let start_time = std::time::Instant::now();
 
-    let mesh_positions = [
-        vec3(0.0f32, 0.0, 0.0),
-        vec3(2.0, 5.0, -15.0),
-        vec3(-1.5, -2.2, -2.5),
-        vec3(-3.8, -2.0, -12.3),
-        vec3(2.4, -0.4, -3.5),
-        vec3(-1.7, 3.0, -7.5),
-        vec3(1.3, -2.0, -2.5),
-        vec3(1.5, 2.0, -2.5),
-        vec3(1.5, 0.2, -1.5),
-        vec3(-1.3, 1.0, -1.5),
-    ];
-
-    // Camera / Projection
-    let up = vec3(0.0f32, 1.0, 0.0);
-    let mut camera_pos = Point3 { x: 0.0f32, y: 0.0, z: 5.0 };
-    let camera_target = Point3 { x: 0.0f32, y: 0.0, z: 0.0 };
-    let camera_direction = camera_pos - camera_target;
-    let camera_front = vec3(0.0f32, 0.0, -1.0);
-    let camera_right = (up.cross(camera_direction)).normalize();
-    let camera_up = camera_direction.cross(camera_right);
+    // Camera
+    let mut camera = camera::Camera::new(Point3::new(0.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, -1.0));
 
     event_loop.run(move |event, _, controlflow| match event {
-
-        Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } => {
-            *controlflow = glutin::event_loop::ControlFlow::Exit;
-        }
         Event::MainEventsCleared => {
+            deltatime = std::time::Instant::elapsed(&start_time).as_secs_f32() - last_frame_time;
+            last_frame_time = std::time::Instant::elapsed(&start_time).as_secs_f32();
+            // println!(r#"FPS: {}"#, 1.0 / deltatime);
             unsafe {
                 glClearColor(0.1, 0.1, 0.2, 1.0);
                 glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-                let time = std::time::Instant::elapsed(&start_time).as_secs_f32();
-
-                // let view = Matrix4::look_at_rh(camera_pos, camera_target, camera_up);
-                let view = Matrix4::look_at_rh(camera_pos, camera_pos + camera_front, camera_up);
+                let view = camera.get_view_matrix();
 
                 let projection = cgmath::perspective(Deg(45.0), SCR_WIDTH as f32 / SCR_HEIGHT as f32, 0.1, 100.0);
                 // note: currently we set the projection matrix each frame, but since the projection matrix rarely changes it's often best practice to set it outside the main loop only once.
@@ -222,7 +219,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 gl_check_error();
 
                 for (i, position) in mesh_positions.iter().enumerate() {
-                    let mut model = Matrix4::from_translation(*position) * Matrix4::from_axis_angle(vec3(0.5, 1.0, 0.0).normalize(), cgmath::Rad(time));
+                    let mut model = Matrix4::from_translation(*position) * Matrix4::from_axis_angle(vec3(0.5, 1.0, 0.0).normalize(), cgmath::Rad(last_frame_time));
                     let angle = 20.0 * i as f32;
                     model = model * Matrix4::from_axis_angle(vec3(1.0, 0.3, 0.5).normalize(), Deg(angle));
                     glUniformMatrix4fv(model_loc, 1, _GL_FALSE, model.as_ptr());
@@ -231,7 +228,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             context.window().request_redraw();
         }
+        Event::WindowEvent { event, .. } => match event {
+            WindowEvent::CloseRequested => *controlflow = glutin::event_loop::ControlFlow::Exit,
+
+            // Input Events
+            WindowEvent::KeyboardInput {
+                input: KeyboardInput {
+                    virtual_keycode: Some(virtual_code),
+                    state,
+                    ..
+                },
+                is_synthetic: false,
+                ..
+            } => match (virtual_code, state) {
+                (VirtualKeyCode::Escape, _) => *controlflow = glutin::event_loop::ControlFlow::Exit,
+                _ => {
+                    keyboard_state.process_event(state, virtual_code);
+                }
+            },
+            WindowEvent::CursorMoved { position, .. } => {
+                camera.process_rotation(position, context.window().inner_size(), deltatime);
+                context
+                    .window()
+                    .set_cursor_position(glutin::dpi::LogicalPosition::new(SCR_WIDTH as f32 / 2.0, SCR_HEIGHT as f32 / 2.0))
+                    .unwrap();
+            }
+            _ => {}
+        },
         Event::RedrawRequested(_) => {
+            let mut direction = Vector3::<f32> { x: 0.0, y: 0.0, z: 0.0 };
+
+            if keyboard_state.is_pressed(&VirtualKeyCode::W) {
+                direction.z += 1.0;
+            }
+            if keyboard_state.is_pressed(&VirtualKeyCode::S) {
+                direction.z -= 1.0;
+            }
+            if keyboard_state.is_pressed(&VirtualKeyCode::A) {
+                direction.x += 1.0;
+            }
+            if keyboard_state.is_pressed(&VirtualKeyCode::D) {
+                direction.x -= 1.0;
+            }
+            camera.process_movement(direction, deltatime);
+
             context.swap_buffers().unwrap();
         }
         _ => {
